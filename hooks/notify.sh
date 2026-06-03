@@ -106,6 +106,38 @@ if [ "${#BODY}" -gt 200 ]; then BODY="${BODY:0:197}..."; fi
 LEAF=""
 [ -n "$CWD" ] && LEAF="$(basename "$CWD" 2>/dev/null || true)"
 
+# --- suppress when you're already looking at this project's window ----------
+# Two cheap-to-expensive steps. Step 1 (frontmost app) needs no permission. Step
+# 2 (window title) uses System Events and needs Accessibility — if that's not
+# granted it fails, and we fail OPEN (show the banner) rather than wrongly hide
+# it. So the feature is best-effort: it only ever hides a banner we're certain
+# you don't need.
+is_focused_on_this_project() {
+  [ -n "$LEAF" ] || return 1
+  # Frontmost application's bundle id (no permission required).
+  local asn bid
+  asn="$(lsappinfo front 2>/dev/null)" || return 1
+  [ -n "$asn" ] || return 1
+  bid="$(lsappinfo info -only bundleID "$asn" 2>/dev/null | sed -n 's/.*"CFBundleIdentifier"="\([^"]*\)".*/\1/p')"
+  case "$bid" in
+    com.microsoft.VSCode|com.microsoft.VSCodeInsiders|com.visualstudio.code.oss|com.vscodium) ;;
+    *) return 1 ;;  # a non-VS-Code app is frontmost -> you're not looking here
+  esac
+  # VS Code is frontmost. Is the focused WINDOW this project? Compare its title
+  # to the project folder name (VS Code titles include the root folder name).
+  local title
+  title="$(osascript -e 'tell application "System Events" to tell (first process whose frontmost is true) to get title of front window' 2>/dev/null)" || return 1
+  [ -n "$title" ] || return 1
+  case "$title" in
+    *"$LEAF"*) return 0 ;;  # focused window belongs to this project -> suppress
+    *) return 1 ;;
+  esac
+}
+if is_focused_on_this_project; then
+  log "suppressed: focused on this project's VS Code window (leaf='$LEAF')"
+  exit 0
+fi
+
 # --- locate terminal-notifier ---------------------------------------------
 # Check PATH first, then Homebrew prefixes and our per-user fallback install.
 find_terminal_notifier() {

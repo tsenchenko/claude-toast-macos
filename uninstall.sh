@@ -3,8 +3,8 @@
 # Removes Claude Code macOS notifications setup for the current user.
 #
 # Reverses install.sh: deletes the hook scripts, removes the per-user
-# terminal-notifier copy (if we installed one), and strips the hooks block from
-# ~/.claude/settings.local.json (other keys are preserved).
+# terminal-notifier copy (if we installed one), and strips our hook entries from
+# ~/.claude/settings.json (other keys and other hooks are preserved).
 #
 # A Homebrew-installed terminal-notifier is left in place (you may use it
 # elsewhere) — remove it yourself with: brew uninstall terminal-notifier
@@ -16,7 +16,7 @@ set -uo pipefail
 
 HOOKS_DIR="$HOME/.claude/hooks"
 BIN_DIR="$HOME/.claude/bin"
-SETTINGS="$HOME/.claude/settings.local.json"
+SETTINGS="$HOME/.claude/settings.json"
 
 if [ -t 1 ]; then C_CYAN=$'\033[36m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_MAGENTA=$'\033[35m'; C_RESET=$'\033[0m'
 else C_CYAN=""; C_GREEN=""; C_YELLOW=""; C_MAGENTA=""; C_RESET=""; fi
@@ -42,26 +42,26 @@ if [ -d "$BIN_DIR/terminal-notifier.app" ]; then
   if [ -d "$BIN_DIR" ] && [ -z "$(ls -A "$BIN_DIR" 2>/dev/null)" ]; then rmdir "$BIN_DIR"; fi
 fi
 
-# 3. remove ONLY our hook entries from settings.local.json.
-# We identify our entries by the notify.sh command and drop just those, leaving
-# SessionStart and any other user hooks intact. An event key is removed only if
-# it becomes empty, and the "hooks" object only if it becomes empty.
-step "Cleaning settings.local.json"
-HOOKS_DIR="$HOME/.claude/hooks"
+# 3. remove ONLY our hook entries from settings.json.
+# We identify our entries by the notify.sh command path and drop just those,
+# leaving SessionStart and any other user hooks intact. The marker matches both
+# the portable "$HOME/..." form and older absolute-path installs. An event key is
+# removed only if it becomes empty, and the "hooks" object only if it becomes empty.
+step "Cleaning settings.json"
 if [ -f "$SETTINGS" ]; then
   RT=""
   if command -v node >/dev/null 2>&1; then RT="node"
   elif command -v python3 >/dev/null 2>&1; then RT="python3"; fi
   if [ "$RT" = "node" ]; then
-    CT_SETTINGS="$SETTINGS" CT_HOOKS_DIR="$HOOKS_DIR" node -e '
+    CT_SETTINGS="$SETTINGS" node -e '
       const fs=require("fs");
       const file=process.env.CT_SETTINGS;
-      const notifyPath=process.env.CT_HOOKS_DIR+"/notify.sh";
+      const marker="/.claude/hooks/notify.sh";
       let raw="";try{raw=fs.readFileSync(file,"utf8");}catch(e){process.exit(0);}
       if(!raw.trim())process.exit(0);
-      let s;try{s=JSON.parse(raw);}catch(e){console.error("    Could not parse settings.local.json — leaving it alone.");process.exit(0);}
+      let s;try{s=JSON.parse(raw);}catch(e){console.error("    Could not parse settings.json — leaving it alone.");process.exit(0);}
       if(!s||typeof s!=="object"||typeof s.hooks!=="object"||s.hooks===null)process.exit(0);
-      const isOurs=g=>g&&Array.isArray(g.hooks)&&g.hooks.some(h=>h&&typeof h.command==="string"&&h.command.includes(notifyPath));
+      const isOurs=g=>g&&Array.isArray(g.hooks)&&g.hooks.some(h=>h&&typeof h.command==="string"&&h.command.includes(marker));
       let changed=false;
       for(const ev of ["Stop","Notification","PreToolUse"]){
         if(Array.isArray(s.hooks[ev])){
@@ -75,19 +75,19 @@ if [ -f "$SETTINGS" ]; then
       else console.log("    nothing of ours to remove");
     '
   elif [ "$RT" = "python3" ]; then
-    CT_SETTINGS="$SETTINGS" CT_HOOKS_DIR="$HOOKS_DIR" python3 -c '
+    CT_SETTINGS="$SETTINGS" python3 -c '
 import os,sys,json
-f=os.environ["CT_SETTINGS"]; notify_path=os.environ["CT_HOOKS_DIR"]+"/notify.sh"
+f=os.environ["CT_SETTINGS"]; marker="/.claude/hooks/notify.sh"
 try:
     with open(f,"r",encoding="utf-8") as fh: raw=fh.read()
 except Exception: sys.exit(0)
 if not raw.strip(): sys.exit(0)
 try: s=json.loads(raw)
 except Exception:
-    print("    Could not parse settings.local.json — leaving it alone."); sys.exit(0)
+    print("    Could not parse settings.json — leaving it alone."); sys.exit(0)
 if not isinstance(s,dict) or not isinstance(s.get("hooks"),dict): sys.exit(0)
 def is_ours(g):
-    return isinstance(g,dict) and isinstance(g.get("hooks"),list) and any(isinstance(h,dict) and isinstance(h.get("command"),str) and notify_path in h["command"] for h in g["hooks"])
+    return isinstance(g,dict) and isinstance(g.get("hooks"),list) and any(isinstance(h,dict) and isinstance(h.get("command"),str) and marker in h["command"] for h in g["hooks"])
 changed=False
 for ev in ["Stop","Notification","PreToolUse"]:
     if isinstance(s["hooks"].get(ev),list):

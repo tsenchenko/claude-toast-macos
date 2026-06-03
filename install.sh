@@ -6,7 +6,11 @@
 # macOS notifications via terminal-notifier. Installs terminal-notifier (Homebrew
 # if available, otherwise a per-user download — no admin), copies the hook
 # scripts to ~/.claude/hooks/, and merges the hooks block into
-# ~/.claude/settings.local.json without overwriting existing keys.
+# ~/.claude/settings.json without overwriting existing keys.
+#
+# Hooks are written with portable "$HOME/.claude/hooks/notify.sh" commands (not
+# absolute paths), so a settings.json synced across machines keeps working — each
+# machine resolves $HOME to its own hook scripts.
 #
 # One-liner:
 #   curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/install.sh | bash
@@ -21,7 +25,7 @@ TN_RELEASE_URL="https://github.com/julienXX/terminal-notifier/releases/download/
 
 HOOKS_DIR="$HOME/.claude/hooks"
 BIN_DIR="$HOME/.claude/bin"
-SETTINGS="$HOME/.claude/settings.local.json"
+SETTINGS="$HOME/.claude/settings.json"
 
 # --- pretty output ---------------------------------------------------------
 if [ -t 1 ]; then C_CYAN=$'\033[36m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_MAGENTA=$'\033[35m'; C_RESET=$'\033[0m'
@@ -44,7 +48,7 @@ JSON_RT=""
 if command -v node >/dev/null 2>&1; then JSON_RT="node"
 elif command -v python3 >/dev/null 2>&1; then JSON_RT="python3"; fi
 if [ -z "$JSON_RT" ]; then
-  echo "Need node or python3 to update settings.local.json safely. Install one and re-run." >&2
+  echo "Need node or python3 to update settings.json safely. Install one and re-run." >&2
   exit 1
 fi
 
@@ -100,25 +104,27 @@ for f in notify.sh focus-vscode.sh; do
   chmod +x "$HOOKS_DIR/$f"
 done
 
-# --- 3. merge hooks into settings.local.json -------------------------------
+# --- 3. merge hooks into settings.json -------------------------------------
 # Surgical merge: only our three events (Stop, Notification, PreToolUse) are
 # touched, and within each event only OUR entry (identified by the notify.sh
 # command) is replaced. Any other hooks — SessionStart, a user's own Stop hook,
 # unrelated PreToolUse matchers — are preserved. Idempotent: re-running drops
-# our previous entry before re-adding, so it never duplicates.
-step "Wiring hooks into ~/.claude/settings.local.json"
+# our previous entry before re-adding, so it never duplicates. The marker
+# "/.claude/hooks/notify.sh" also matches older absolute-path installs, so
+# re-running migrates them to the portable "$HOME/..." form.
+step "Wiring hooks into ~/.claude/settings.json"
 if [ "$JSON_RT" = "node" ]; then
-  CT_HOOKS_DIR="$HOOKS_DIR" CT_SETTINGS="$SETTINGS" node -e '
+  CT_SETTINGS="$SETTINGS" node -e '
     const fs=require("fs"),path=require("path");
-    const dir=process.env.CT_HOOKS_DIR, file=process.env.CT_SETTINGS;
-    const notifyPath=dir+"/notify.sh";
-    const notify="\""+notifyPath+"\"";
+    const file=process.env.CT_SETTINGS;
+    const notify="\"$HOME/.claude/hooks/notify.sh\"";   // portable across machines
+    const marker="/.claude/hooks/notify.sh";            // matches old absolute installs too
     let settings={};
     try{const raw=fs.readFileSync(file,"utf8");if(raw.trim())settings=JSON.parse(raw);}
-    catch(e){if(e.code!=="ENOENT"){console.error("settings.local.json is not valid JSON. Fix it and re-run.");process.exit(3);}}
-    if(typeof settings!=="object"||settings===null||Array.isArray(settings)){console.error("settings.local.json is not a JSON object.");process.exit(3);}
+    catch(e){if(e.code!=="ENOENT"){console.error("settings.json is not valid JSON. Fix it and re-run.");process.exit(3);}}
+    if(typeof settings!=="object"||settings===null||Array.isArray(settings)){console.error("settings.json is not a JSON object.");process.exit(3);}
     if(typeof settings.hooks!=="object"||settings.hooks===null||Array.isArray(settings.hooks)) settings.hooks={};
-    const isOurs=g=>g&&Array.isArray(g.hooks)&&g.hooks.some(h=>h&&typeof h.command==="string"&&h.command.includes(notifyPath));
+    const isOurs=g=>g&&Array.isArray(g.hooks)&&g.hooks.some(h=>h&&typeof h.command==="string"&&h.command.includes(marker));
     const upsert=(event,matcher,arg)=>{
       const arr=Array.isArray(settings.hooks[event])?settings.hooks[event].filter(g=>!isOurs(g)):[];
       arr.push({matcher:matcher,hooks:[{type:"command",command:notify+" "+arg}]});
@@ -131,11 +137,11 @@ if [ "$JSON_RT" = "node" ]; then
     fs.writeFileSync(file,JSON.stringify(settings,null,2)+"\n");
   '
 else
-  CT_HOOKS_DIR="$HOOKS_DIR" CT_SETTINGS="$SETTINGS" python3 -c '
+  CT_SETTINGS="$SETTINGS" python3 -c '
 import os,sys,json
-d=os.environ["CT_HOOKS_DIR"]; f=os.environ["CT_SETTINGS"]
-notify_path=d+"/notify.sh"
-notify="\""+notify_path+"\""
+f=os.environ["CT_SETTINGS"]
+notify="\"$HOME/.claude/hooks/notify.sh\""   # portable across machines
+marker="/.claude/hooks/notify.sh"            # matches old absolute installs too
 settings={}
 if os.path.exists(f):
     try:
@@ -143,13 +149,13 @@ if os.path.exists(f):
             raw=fh.read()
         if raw.strip(): settings=json.loads(raw)
     except Exception:
-        sys.stderr.write("settings.local.json is not valid JSON. Fix it and re-run.\n"); sys.exit(3)
+        sys.stderr.write("settings.json is not valid JSON. Fix it and re-run.\n"); sys.exit(3)
 if not isinstance(settings,dict):
-    sys.stderr.write("settings.local.json is not a JSON object.\n"); sys.exit(3)
+    sys.stderr.write("settings.json is not a JSON object.\n"); sys.exit(3)
 hooks=settings.get("hooks")
 if not isinstance(hooks,dict): hooks={}
 def is_ours(g):
-    return isinstance(g,dict) and isinstance(g.get("hooks"),list) and any(isinstance(h,dict) and isinstance(h.get("command"),str) and notify_path in h["command"] for h in g["hooks"])
+    return isinstance(g,dict) and isinstance(g.get("hooks"),list) and any(isinstance(h,dict) and isinstance(h.get("command"),str) and marker in h["command"] for h in g["hooks"])
 def upsert(event,matcher,arg):
     arr=[g for g in hooks.get(event,[]) if not is_ours(g)] if isinstance(hooks.get(event),list) else []
     arr.append({"matcher":matcher,"hooks":[{"type":"command","command":notify+" "+arg}]})
@@ -175,4 +181,5 @@ fi
 
 printf '\n%sDone.%s\n' "$C_GREEN" "$C_RESET"
 printf '%sRestart any open Claude Code session so it picks up the new hooks.%s\n' "$C_GREEN" "$C_RESET"
-printf '%sIf the test banner did not appear, allow "terminal-notifier" in System Settings > Notifications (set it to "Alerts" to make banners stay on screen).%s\n\n' "$C_YELLOW" "$C_RESET"
+printf '%sIf the test banner did not appear, allow "terminal-notifier" in System Settings > Notifications (set it to "Alerts" to make banners stay on screen).%s\n' "$C_YELLOW" "$C_RESET"
+printf '%sFocus-aware suppression (no banner while you are looking at that project'\''s VS Code window) needs Accessibility permission for the app running the hook — grant it in System Settings > Privacy & Security > Accessibility. Without it, banners simply always show.%s\n\n' "$C_YELLOW" "$C_RESET"
