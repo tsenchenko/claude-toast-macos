@@ -1,0 +1,158 @@
+# claude-toast-macos
+
+> Native macOS notifications for Claude Code in VS Code — know when Claude finishes a turn or needs your attention, even when you're in another window.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2011%2B-blue)](#requirements)
+
+> The macOS counterpart to [claude-toast-windows](https://github.com/tsenchenko/claude-toast-windows). Same idea, native to macOS.
+
+## The problem
+
+Claude Code in the VS Code extension has no native desktop notifications. There's a built-in setting (`preferredNotifChannel`) but it only works in terminal emulators like iTerm2, Ghostty, or Kitty — not in the VS Code extension.
+
+Switch to another app while Claude is running and you won't know when it:
+
+- finishes a turn and is waiting for your next prompt
+- asks a question or requests permission to run a tool
+
+## The solution
+
+This repo wires Claude Code's built-in **hooks** (`Stop`, `Notification`, and `PreToolUse`) into native macOS notifications. You get a banner in the corner of the screen the moment Claude returns control to you. The notification even shows the actual question text, so you know what's pending without switching apps.
+
+**Click the notification** to bring the right VS Code window forward — matched by project folder, even if you have several VS Code windows open.
+
+## Features
+
+- Notification on `Stop` (Claude finishes its turn)
+- Notification on `Notification` (permission prompts, idle prompts), showing the actual prompt text
+- Notification on `PreToolUse` for `AskUserQuestion` and `ExitPlanMode` — covers in-chat questions and plan-mode approval, which Claude Code does **not** dispatch through the `Notification` event
+- The question text is surfaced in the notification body, so you know what's being asked without switching apps
+- **Click** the notification to focus the correct VS Code window — even with multiple windows open, it picks the one running this Claude Code session (via the `code` CLI, so no Accessibility permission is needed)
+- A notification sound on every event
+- Notifications for the same project replace each other instead of stacking
+- Per-user install — no admin rights, no sudo
+- Lives in `~/.claude/settings.local.json` so it doesn't interfere with anything synced via `~/.claude/settings.json`
+
+## Requirements
+
+- macOS 11 (Big Sur) or newer
+- [Claude Code](https://claude.com/claude-code) in the **VS Code extension**. The CLI works for notifications too, but the click-to-focus action targets a VS Code window — there's no equivalent for terminal sessions
+- `node` (already present if you run Claude Code) or `python3` — used to read the event JSON and update settings safely
+- The VS Code `code` command on your machine (VS Code → Command Palette → "Shell Command: Install 'code' command in PATH"). Without it, click-to-focus falls back to just bringing VS Code forward
+- Internet for first-time install (to fetch `terminal-notifier`)
+
+## Install
+
+One line in Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/install.sh | bash
+```
+
+The installer will:
+
+1. Install [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) — via Homebrew if you have it, otherwise a per-user copy into `~/.claude/bin/` (no admin)
+2. Copy `notify.sh` and `focus-vscode.sh` to `~/.claude/hooks/`
+3. Merge `Stop`, `Notification`, and `PreToolUse` (matched on `AskUserQuestion|ExitPlanMode`) hooks into `~/.claude/settings.local.json` (other keys are preserved)
+4. Send a test notification to confirm it works
+
+After install, **restart any open Claude Code session** so it picks up the new hooks.
+
+If the test banner doesn't appear, open **System Settings → Notifications → terminal-notifier** and make sure it's allowed. Set its style to **Alerts** (instead of Banners) if you want notifications to stay on screen until dismissed — macOS has no per-notification timeout like Windows does.
+
+## Customize
+
+Open `~/.claude/hooks/notify.sh` and edit. Common tweaks:
+
+- **Change the text** — find the `TITLE` / `SUBTITLE` / `BODY` lines and rewrite
+- **Change the sound** — edit `-sound default` (any name from `/System/Library/Sounds`, or `-sound ''` for silent)
+- **Show VS Code's icon** — add `-sender com.microsoft.VSCode` to the `args` array (note: this can change the click behavior on some macOS versions)
+
+The hook reads the script fresh on every event, so no reinstall is needed after edits.
+
+## Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/uninstall.sh | bash
+```
+
+This removes the hook scripts, deletes the per-user `terminal-notifier` copy if the installer created one, and removes the `hooks` block from `settings.local.json` (other keys are preserved). A Homebrew-installed `terminal-notifier` is left alone — remove it with `brew uninstall terminal-notifier` if you want.
+
+## How it works
+
+```
+┌──────────────┐   Stop / Notification / PreToolUse   ┌──────────────┐
+│ Claude Code  ├─────────────────────────────────────►│  notify.sh   │
+└──────────────┘   (event JSON piped to script stdin)  └──────┬───────┘
+                                                              │
+                                                              ▼
+                                                    ┌────────────────────┐
+                                                    │ terminal-notifier  │──► macOS notification
+                                                    └────────────────────┘
+                                                              │
+                                              user clicks the notification
+                                                              ▼
+                                              terminal-notifier  -execute
+                                                              │
+                                                              ▼
+                                                    ┌────────────────────┐
+                                                    │  focus-vscode.sh   │
+                                                    └────────────────────┘
+                                                              │
+                                                              ▼
+                                              `code <project folder>` focuses
+                                              the VS Code window whose folder
+                                              matches this Claude Code session
+```
+
+### Components
+
+- **Hooks in `settings.local.json`** — Claude Code natively runs shell commands on lifecycle events. We attach to three:
+  - `Stop` — turn complete
+  - `Notification` — permission prompts and idle prompts
+  - `PreToolUse` matched on `AskUserQuestion|ExitPlanMode` — in-chat questions and plan-mode approval (these don't go through the `Notification` event in current Claude Code)
+
+  [Hook docs.](https://docs.claude.com/en/docs/claude-code/hooks)
+- **`notify.sh`** — receives the event JSON on stdin, extracts the message / question / plan and the project `cwd` (using `node`, falling back to `python3`), and renders the notification through `terminal-notifier`. The click action carries the base64-encoded `cwd`. Logs to `$TMPDIR/claude-toast.log`.
+- **`focus-vscode.sh`** — invoked when the notification is clicked. Decodes the project folder and runs `code <folder>`, which asks VS Code to focus the matching window and come to the foreground — no Accessibility permission required. If the `code` CLI isn't found it falls back to activating VS Code and a best-effort AppleScript window raise. Logs to `$TMPDIR/claude-focus.log`.
+
+### Why `terminal-notifier` and `-execute` instead of a URL protocol?
+
+The Windows version registers a custom `claude-focus://` URL protocol because Windows toast buttons can only fire a URL, an app-activation, or a COM callback. On macOS, `terminal-notifier`'s `-execute` runs a shell command directly when the notification is clicked — so there's no protocol to register and no registry to touch. The whole notification is clickable.
+
+### Why `code <folder>` instead of raising the window ourselves?
+
+Programmatically raising another app's specific window on macOS requires Accessibility permission (a TCC prompt). Handing the folder to the `code` CLI sidesteps that entirely: VS Code receives the open request and focuses its own window for that folder — correct even with several windows open, and no permission prompt.
+
+## Tested on
+
+- macOS 26.5 (Tahoe) — banners, click-to-focus, and the full hook chain verified end-to-end
+- VS Code with the Claude Code extension
+- `terminal-notifier` 2.0.0 (Homebrew)
+- `node` 20
+
+Should work on macOS 11+ and with `python3` instead of `node`. PRs welcome if you hit issues elsewhere.
+
+## Files in this repo
+
+```
+claude-toast-macos/
+├── README.md
+├── LICENSE
+├── install.sh           # one-shot installer
+├── uninstall.sh         # one-shot uninstaller
+└── hooks/
+    ├── notify.sh        # the notification renderer
+    └── focus-vscode.sh  # the click-to-focus handler
+```
+
+The `hooks/` folder is the source of truth — `install.sh` copies (local clone) or downloads those files into `~/.claude/hooks/`.
+
+## Credits
+
+- [terminal-notifier](https://github.com/julienXX/terminal-notifier) by Eloy Durán / Julien Blanchard — native macOS notifications from the command line.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
