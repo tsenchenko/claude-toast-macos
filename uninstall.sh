@@ -10,7 +10,7 @@
 # elsewhere) — remove it yourself with: brew uninstall terminal-notifier
 #
 # One-liner:
-#   curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-banners-macos/main/uninstall.sh | bash
 
 set -uo pipefail
 

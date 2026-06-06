@@ -22,6 +22,43 @@ CWD=""
 if [ "${1:-}" != "" ]; then
   CWD="$(printf '%s' "$1" | base64 -d 2>/dev/null || true)"
 fi
+
+# Claude Code's cwd is frequently a SUBFOLDER of the project (e.g.
+# .../Sell-2-Sam/knowledge). `code <subfolder>` opens a NEW window instead of
+# focusing the project window, so climb to the enclosing project root first:
+# git top-level, else nearest ancestor with a project marker, else unchanged.
+# Idempotent — a path that is already a root resolves to itself. We locate git by
+# absolute path because this script runs with the minimal launchd PATH.
+resolve_project_root() {
+  local d="${1:-}"
+  [ -n "$d" ] || { printf '%s' "$d"; return; }
+  # Normalise to an absolute path (this also validates the directory exists).
+  # Critical: it stops the marker walk below from looping forever on a relative
+  # path such as "." — dirname "." is "." and would otherwise never reach "/".
+  local abs
+  abs="$(cd "$d" 2>/dev/null && pwd)" || abs=""
+  [ -n "$abs" ] || { printf '%s' "$d"; return; }
+  d="$abs"
+  local g git_bin=""
+  for g in /usr/bin/git /opt/homebrew/bin/git /usr/local/bin/git; do
+    [ -x "$g" ] && { git_bin="$g"; break; }
+  done
+  if [ -n "$git_bin" ]; then
+    local top
+    top="$("$git_bin" -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
+    [ -n "$top" ] && [ -d "$top" ] && { printf '%s' "$top"; return; }
+  fi
+  local cur="$d"
+  while [ -n "$cur" ] && [ "$cur" != "/" ]; do
+    if [ -e "$cur/.git" ] || [ -d "$cur/.vscode" ] || [ -e "$cur/CLAUDE.md" ] || [ -e "$cur/package.json" ]; then
+      printf '%s' "$cur"; return
+    fi
+    cur="$(dirname "$cur")"
+  done
+  printf '%s' "$d"
+}
+CWD="$(resolve_project_root "$CWD")"
+
 LEAF=""
 [ -n "$CWD" ] && LEAF="$(basename "$CWD" 2>/dev/null || true)"
 log "invoked cwd='$CWD' leaf='$LEAF'"

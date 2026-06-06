@@ -1,11 +1,9 @@
-# claude-toast-macos
+# claude-banners-macos
 
 > Native macOS notifications for Claude Code in VS Code — know when Claude finishes a turn or needs your attention, even when you're in another window.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2011%2B-blue)](#requirements)
-
-> The macOS counterpart to [claude-toast-windows](https://github.com/tsenchenko/claude-toast-windows). Same idea, native to macOS.
 
 ## The problem
 
@@ -33,7 +31,7 @@ This repo wires Claude Code's built-in **hooks** (`Stop`, `Notification`, and `P
 - A notification sound on every event
 - Notifications for the same project replace each other instead of stacking
 - Per-user install — no admin rights, no sudo
-- Lives in `~/.claude/settings.json` with portable `"$HOME/.claude/hooks/notify.sh"` commands — so a `settings.json` synced across machines (e.g. via Google Drive) keeps working: each machine resolves `$HOME` to its own local hook scripts, and macOS and Windows installs don't clobber each other
+- Lives in `~/.claude/settings.json` with portable `"$HOME/.claude/hooks/notify.sh"` commands — so a `settings.json` synced across machines (e.g. via Google Drive) keeps working: each machine resolves `$HOME` to its own local hook scripts
 
 ## Requirements
 
@@ -48,7 +46,7 @@ This repo wires Claude Code's built-in **hooks** (`Stop`, `Notification`, and `P
 One line in Terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-banners-macos/main/install.sh | bash
 ```
 
 The installer will:
@@ -60,7 +58,7 @@ The installer will:
 
 After install, **restart any open Claude Code session** so it picks up the new hooks.
 
-If the test banner doesn't appear, open **System Settings → Notifications → terminal-notifier** and make sure it's allowed. Set its style to **Alerts** (instead of Banners) if you want notifications to stay on screen until dismissed — macOS has no per-notification timeout like Windows does.
+If the test banner doesn't appear, open **System Settings → Notifications → terminal-notifier** and make sure it's allowed. Set its style to **Alerts** (instead of Banners) if you want notifications to stay on screen until you dismiss them, instead of disappearing on their own.
 
 **Focus-aware suppression** reads the focused window's title to decide whether you're already looking at that project, which needs **Accessibility** permission for the app that runs the hook (System Settings → Privacy & Security → Accessibility). Until you grant it, notifications simply always show — nothing breaks.
 
@@ -77,7 +75,7 @@ The hook reads the script fresh on every event, so no reinstall is needed after 
 ## Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-banners-macos/main/uninstall.sh | bash
 ```
 
 This removes the hook scripts, deletes the per-user `terminal-notifier` copy if the installer created one, and removes only our hook entries from `settings.json` (other keys and other hooks are preserved). A Homebrew-installed `terminal-notifier` is left alone — remove it with `brew uninstall terminal-notifier` if you want.
@@ -119,12 +117,12 @@ This removes the hook scripts, deletes the per-user `terminal-notifier` copy if 
   Note: at the user level Claude Code reads `~/.claude/settings.json` — **not** `settings.local.json` (that's a project-level file only). Global hooks placed in `settings.local.json` silently never fire.
 
   [Hook docs.](https://docs.claude.com/en/docs/claude-code/hooks)
-- **`notify.sh`** — receives the event JSON on stdin, extracts the message / question / plan and the project `cwd` (using `node`, falling back to `python3`), and renders the notification through `terminal-notifier`. The click action carries the base64-encoded `cwd`. Before notifying, it checks whether you're already focused on this project's VS Code window — frontmost app via `lsappinfo` (no permission), then the focused window's title via System Events (needs Accessibility, fails open) — and suppresses the banner if so. Logs to `$TMPDIR/claude-toast.log`.
+- **`notify.sh`** — receives the event JSON on stdin, extracts the message / question / plan and the project `cwd` (using `node`, falling back to `python3`), and renders the notification through `terminal-notifier`. The click action carries the base64-encoded `cwd`. Before notifying, it checks whether you're already focused on this project's VS Code window — frontmost app via `lsappinfo` (no permission), then the focused window's title via System Events (needs Accessibility, fails open) — and suppresses the banner if so. Logs to `$TMPDIR/claude-banners.log`.
 - **`focus-vscode.sh`** — invoked when the notification is clicked. Decodes the project folder and runs `code <folder>`, which asks VS Code to focus the matching window and come to the foreground — no Accessibility permission required. If the `code` CLI isn't found it falls back to activating VS Code and a best-effort AppleScript window raise. Logs to `$TMPDIR/claude-focus.log`.
 
-### Why `terminal-notifier` and `-execute` instead of a URL protocol?
+### Why `terminal-notifier` and `-execute`?
 
-The Windows version registers a custom `claude-focus://` URL protocol because Windows toast buttons can only fire a URL, an app-activation, or a COM callback. On macOS, `terminal-notifier`'s `-execute` runs a shell command directly when the notification is clicked — so there's no protocol to register and no registry to touch. The whole notification is clickable.
+macOS lets a notification run a shell command directly: `terminal-notifier`'s `-execute` fires the moment you click the banner. So there's nothing to register — no custom URL protocol, no background listener, no indirection. The whole notification is clickable, and the click hands the project folder straight to `focus-vscode.sh`.
 
 ### Why `code <folder>` instead of raising the window ourselves?
 
@@ -142,7 +140,7 @@ Should work on macOS 11+ and with `python3` instead of `node`. PRs welcome if yo
 ## Files in this repo
 
 ```
-claude-toast-macos/
+claude-banners-macos/
 ├── README.md
 ├── LICENSE
 ├── install.sh           # one-shot installer

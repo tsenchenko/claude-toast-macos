@@ -6,14 +6,14 @@
 # via terminal-notifier, and wires the notification click to focus the right
 # VS Code window (via focus-vscode.sh).
 #
-# Logs to $TMPDIR/claude-toast.log so failures are diagnosable. Never exits
+# Logs to $TMPDIR/claude-banners.log so failures are diagnosable. Never exits
 # non-zero — a failed notification must not break the Claude Code session.
 
 set -uo pipefail
 
 EVENT="${1:-Stop}"
 
-LOG="${TMPDIR:-/tmp}/claude-toast.log"
+LOG="${TMPDIR:-/tmp}/claude-banners.log"
 log() { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$EVENT" "$*" >>"$LOG" 2>/dev/null || true; }
 
 # --- read the event JSON from stdin ---------------------------------------
@@ -71,12 +71,54 @@ sys.stdout.write(" ".join(enc(x) for x in [msg,q,plan,cwd]))' 2>/dev/null
 
 dec() { [ "${1:-}" = "-" ] && return 0; printf '%s' "$1" | base64 -d 2>/dev/null || true; }
 
+# Resolve a possibly-nested working directory to the project root that VS Code
+# actually has open. Claude Code reports the session's REAL cwd, which is often a
+# SUBFOLDER of the project (e.g. .../Sell-2-Sam/knowledge). Keying off that
+# subfolder makes the click open a new window, defeats focus-suppression (window
+# title carries the project name, not the subfolder), and splits notification
+# grouping. So we climb to the enclosing project root. Preference order:
+#   1) git top-level — the usual case: a git repo opened at its root in VS Code
+#   2) nearest ancestor with a project marker (.git/.vscode/CLAUDE.md/package.json)
+#   3) the path unchanged — last resort
+# Uses an absolute git path because some callers run with the minimal launchd PATH.
+resolve_project_root() {
+  local d="${1:-}"
+  [ -n "$d" ] || { printf '%s' "$d"; return; }
+  # Normalise to an absolute path (this also validates the directory exists).
+  # Critical: it stops the marker walk below from looping forever on a relative
+  # path such as "." — dirname "." is "." and would otherwise never reach "/".
+  local abs
+  abs="$(cd "$d" 2>/dev/null && pwd)" || abs=""
+  [ -n "$abs" ] || { printf '%s' "$d"; return; }
+  d="$abs"
+  local g git_bin=""
+  for g in /usr/bin/git /opt/homebrew/bin/git /usr/local/bin/git; do
+    [ -x "$g" ] && { git_bin="$g"; break; }
+  done
+  if [ -n "$git_bin" ]; then
+    local top
+    top="$("$git_bin" -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
+    [ -n "$top" ] && [ -d "$top" ] && { printf '%s' "$top"; return; }
+  fi
+  local cur="$d"
+  while [ -n "$cur" ] && [ "$cur" != "/" ]; do
+    if [ -e "$cur/.git" ] || [ -d "$cur/.vscode" ] || [ -e "$cur/CLAUDE.md" ] || [ -e "$cur/package.json" ]; then
+      printf '%s' "$cur"; return
+    fi
+    cur="$(dirname "$cur")"
+  done
+  printf '%s' "$d"
+}
+
 T_MSG="-"; T_Q="-"; T_PLAN="-"; T_CWD="-"
 read -r T_MSG T_Q T_PLAN T_CWD < <(extract) || true
 MSG="$(dec "$T_MSG")"
 QUESTION="$(dec "$T_Q")"
 HASPLAN="$(dec "$T_PLAN")"
 CWD="$(dec "$T_CWD")"
+# Normalise to the project root so the click focuses the existing window and the
+# focus-suppression / grouping below key off the project, not a nested subfolder.
+CWD="$(resolve_project_root "$CWD")"
 
 # --- decide title / subtitle / body based on the event --------------------
 TITLE="Claude Code"
@@ -171,8 +213,8 @@ fi
 # Group per-project so a fresh notification replaces a stale one for the same
 # project instead of stacking. (Stop only fires once a turn finishes, so it
 # never overwrites a still-pending permission/question notification.)
-GROUP="claude-toast"
-[ -n "$LEAF" ] && GROUP="claude-toast-$LEAF"
+GROUP="claude-banners"
+[ -n "$LEAF" ] && GROUP="claude-banners-$LEAF"
 
 args=( -title "$TITLE" -subtitle "$SUBTITLE" -message "$BODY" -sound default -group "$GROUP" )
 [ -n "$EXECUTE" ] && args+=( -execute "$EXECUTE" )

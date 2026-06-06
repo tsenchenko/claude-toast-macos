@@ -13,14 +13,14 @@
 # machine resolves $HOME to its own hook scripts.
 #
 # One-liner:
-#   curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tsenchenko/claude-banners-macos/main/install.sh | bash
 #
 # Override the source location (e.g. a fork) with:
 #   REPO_BASE_URL=https://raw.githubusercontent.com/you/your-fork/main bash install.sh
 
 set -euo pipefail
 
-REPO_BASE_URL="${REPO_BASE_URL:-https://raw.githubusercontent.com/tsenchenko/claude-toast-macos/main}"
+REPO_BASE_URL="${REPO_BASE_URL:-https://raw.githubusercontent.com/tsenchenko/claude-banners-macos/main}"
 TN_RELEASE_URL="https://github.com/julienXX/terminal-notifier/releases/download/2.0.0/terminal-notifier-2.0.0.zip"
 
 HOOKS_DIR="$HOME/.claude/hooks"
