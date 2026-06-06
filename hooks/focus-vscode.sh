@@ -15,8 +15,8 @@
 
 set -uo pipefail
 
-LOG="${TMPDIR:-/tmp}/claude-focus.log"
-log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG" 2>/dev/null || true; }
+LOG="${TMPDIR:-/tmp}/claude-banners.log"   # shared with notify.sh; our lines are tagged [focus]
+log() { printf '%s [focus] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG" 2>/dev/null || true; }
 
 CWD=""
 if [ "${1:-}" != "" ]; then

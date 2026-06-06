@@ -118,7 +118,7 @@ This removes the hook scripts, deletes the per-user `terminal-notifier` copy if 
 
   [Hook docs.](https://docs.claude.com/en/docs/claude-code/hooks)
 - **`notify.sh`** — receives the event JSON on stdin, extracts the message / question / plan and the project `cwd` (using `node`, falling back to `python3`), and renders the notification through `terminal-notifier`. The click action carries the base64-encoded `cwd`. Before notifying, it checks whether you're already focused on this project's VS Code window — frontmost app via `lsappinfo` (no permission), then the focused window's title via System Events (needs Accessibility, fails open) — and suppresses the banner if so. Logs to `$TMPDIR/claude-banners.log`.
-- **`focus-vscode.sh`** — invoked when the notification is clicked. Decodes the project folder and runs `code <folder>`, which asks VS Code to focus the matching window and come to the foreground — no Accessibility permission required. If the `code` CLI isn't found it falls back to activating VS Code and a best-effort AppleScript window raise. Logs to `$TMPDIR/claude-focus.log`.
+- **`focus-vscode.sh`** — invoked when the notification is clicked. Decodes the project folder and runs `code <folder>`, which asks VS Code to focus the matching window and come to the foreground — no Accessibility permission required. If the `code` CLI isn't found it falls back to activating VS Code and a best-effort AppleScript window raise. Logs to the same `$TMPDIR/claude-banners.log` as `notify.sh` (its lines are tagged `[focus]`).
 
 ### Why `terminal-notifier` and `-execute`?
 
