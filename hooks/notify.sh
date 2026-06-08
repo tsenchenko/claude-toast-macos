@@ -15,6 +15,13 @@
 # permission prompt, so we show a banner. Tools that legitimately run long (Bash,
 # Grep, …) are NOT armed, to avoid false "needs approval" banners.
 #
+# A marker can ALSO go stale when a tool errors / is denied / is cancelled —
+# PostToolUse only fires for tools that actually complete, so those markers never
+# get cleared. We tell that apart from a genuine block with an activity heartbeat:
+# a real permission prompt freezes the session (nothing happens after the armed
+# tool), whereas a leaked marker is followed by more activity. Only the former
+# fires a banner.
+#
 # Logs to $TMPDIR/claude-banners.log. Never exits non-zero — a failed
 # notification must not break the Claude Code session.
 
@@ -28,6 +35,11 @@ log() { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$EVENT" "$*" >>"$L
 # --- waiting-detector knobs ------------------------------------------------
 # One marker file per in-flight tool call lives here.
 PENDING_DIR="${TMPDIR:-/tmp}/claude-banners-pending"
+# Heartbeat touched on every hook event. The watcher compares it to a marker's
+# age: if anything happened AFTER the tool was armed, the session moved on (the
+# marker just leaked — tool errored/denied/cancelled, no PostToolUse), so we stay
+# quiet. Only a tool with no activity after it is genuinely blocked on YOU.
+ACTIVITY_FILE="${TMPDIR:-/tmp}/claude-banners.activity"
 # How long an armed tool may run before we assume it's blocked on a permission
 # prompt. Set well ABOVE how long these tools actually take to finish in practice
 # — including under heavy parallel workflows, where PostToolUse (which clears the
@@ -186,6 +198,8 @@ show_banner() {
 }
 
 # --- dispatch --------------------------------------------------------------
+# Mark that the session is alive/progressing (used by the watcher below).
+touch "$ACTIVITY_FILE" 2>/dev/null || true
 case "$EVENT" in
   PreToolUse)
     # Fires before EVERY tool call. Keep the common path cheap (grep, no node).
@@ -212,8 +226,15 @@ case "$EVENT" in
         printf '%s\n' "$cwd" >"$marker" 2>/dev/null || true
         # Detached watcher — the hook itself returns immediately.
         ( sleep "$WAIT_SECS"
+          # Fire only if the marker survived AND nothing happened after it was
+          # armed. Activity afterwards ⇒ the tool didn't block you — its marker
+          # just leaked (errored/denied/cancelled, no PostToolUse) — so stay quiet.
           if [ -e "$marker" ]; then
-            show_banner "Needs your approval" "$tool_name is waiting for your permission" "$(cat "$marker" 2>/dev/null || true)"
+            if [ "$ACTIVITY_FILE" -nt "$marker" ]; then
+              log "suppressed: '$tool_name' marker leaked (no PostToolUse; session moved on) — not a prompt"
+            else
+              show_banner "Needs your approval" "$tool_name is waiting for your permission" "$(cat "$marker" 2>/dev/null || true)"
+            fi
           fi
           rm -f "$marker" 2>/dev/null || true
         ) </dev/null >/dev/null 2>&1 &
