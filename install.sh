@@ -2,7 +2,7 @@
 #
 # Installs Claude Code notifications for macOS.
 #
-# Sets up Claude Code hooks (Stop, Notification, PreToolUse) to fire native
+# Sets up Claude Code hooks (Stop, Notification, PreToolUse, PostToolUse) to fire native
 # macOS notifications via terminal-notifier. Installs terminal-notifier (Homebrew
 # if available, otherwise a per-user download — no admin), copies the hook
 # scripts to ~/.claude/hooks/, and merges the hooks block into
@@ -105,10 +105,10 @@ for f in notify.sh focus-vscode.sh; do
 done
 
 # --- 3. merge hooks into settings.json -------------------------------------
-# Surgical merge: only our three events (Stop, Notification, PreToolUse) are
-# touched, and within each event only OUR entry (identified by the notify.sh
-# command) is replaced. Any other hooks — SessionStart, a user's own Stop hook,
-# unrelated PreToolUse matchers — are preserved. Idempotent: re-running drops
+# Surgical merge: only our four events (Stop, Notification, PreToolUse,
+# PostToolUse) are touched, and within each event only OUR entry (identified by
+# the notify.sh command) is replaced. Any other hooks — SessionStart, a user's
+# own Stop hook, unrelated matchers — are preserved. Idempotent: re-running drops
 # our previous entry before re-adding, so it never duplicates. The marker
 # "/.claude/hooks/notify.sh" also matches older absolute-path installs, so
 # re-running migrates them to the portable "$HOME/..." form.
@@ -132,7 +132,8 @@ if [ "$JSON_RT" = "node" ]; then
     };
     upsert("Stop","","Stop");
     upsert("Notification","","Notification");
-    upsert("PreToolUse","AskUserQuestion|ExitPlanMode","Notification");
+    upsert("PreToolUse","","PreToolUse");
+    upsert("PostToolUse","","PostToolUse");
     fs.mkdirSync(path.dirname(file),{recursive:true});
     fs.writeFileSync(file,JSON.stringify(settings,null,2)+"\n");
   '
@@ -162,7 +163,8 @@ def upsert(event,matcher,arg):
     hooks[event]=arr
 upsert("Stop","","Stop")
 upsert("Notification","","Notification")
-upsert("PreToolUse","AskUserQuestion|ExitPlanMode","Notification")
+upsert("PreToolUse","","PreToolUse")
+upsert("PostToolUse","","PostToolUse")
 settings["hooks"]=hooks
 os.makedirs(os.path.dirname(f),exist_ok=True)
 with open(f,"w",encoding="utf-8") as fh:

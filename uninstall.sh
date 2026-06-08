@@ -63,7 +63,7 @@ if [ -f "$SETTINGS" ]; then
       if(!s||typeof s!=="object"||typeof s.hooks!=="object"||s.hooks===null)process.exit(0);
       const isOurs=g=>g&&Array.isArray(g.hooks)&&g.hooks.some(h=>h&&typeof h.command==="string"&&h.command.includes(marker));
       let changed=false;
-      for(const ev of ["Stop","Notification","PreToolUse"]){
+      for(const ev of ["Stop","Notification","PreToolUse","PostToolUse"]){
         if(Array.isArray(s.hooks[ev])){
           const kept=s.hooks[ev].filter(g=>!isOurs(g));
           if(kept.length!==s.hooks[ev].length)changed=true;
@@ -89,7 +89,7 @@ if not isinstance(s,dict) or not isinstance(s.get("hooks"),dict): sys.exit(0)
 def is_ours(g):
     return isinstance(g,dict) and isinstance(g.get("hooks"),list) and any(isinstance(h,dict) and isinstance(h.get("command"),str) and marker in h["command"] for h in g["hooks"])
 changed=False
-for ev in ["Stop","Notification","PreToolUse"]:
+for ev in ["Stop","Notification","PreToolUse","PostToolUse"]:
     if isinstance(s["hooks"].get(ev),list):
         kept=[g for g in s["hooks"][ev] if not is_ours(g)]
         if len(kept)!=len(s["hooks"][ev]): changed=True
