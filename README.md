@@ -4,6 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2011%2B-blue)](#requirements)
+[![Release](https://img.shields.io/github/v/release/tsenchenko/claude-banners-macos)](https://github.com/tsenchenko/claude-banners-macos/releases)
 
 ## The problem
 
