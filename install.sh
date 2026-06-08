@@ -132,8 +132,8 @@ if [ "$JSON_RT" = "node" ]; then
     };
     upsert("Stop","","Stop");
     upsert("Notification","","Notification");
-    upsert("PreToolUse","","PreToolUse");
-    upsert("PostToolUse","","PostToolUse");
+    upsert("PreToolUse","Read|Edit|Write|MultiEdit|NotebookEdit|AskUserQuestion|ExitPlanMode","PreToolUse");
+    upsert("PostToolUse","Read|Edit|Write|MultiEdit|NotebookEdit","PostToolUse");
     fs.mkdirSync(path.dirname(file),{recursive:true});
     fs.writeFileSync(file,JSON.stringify(settings,null,2)+"\n");
   '
@@ -163,8 +163,8 @@ def upsert(event,matcher,arg):
     hooks[event]=arr
 upsert("Stop","","Stop")
 upsert("Notification","","Notification")
-upsert("PreToolUse","","PreToolUse")
-upsert("PostToolUse","","PostToolUse")
+upsert("PreToolUse","Read|Edit|Write|MultiEdit|NotebookEdit|AskUserQuestion|ExitPlanMode","PreToolUse")
+upsert("PostToolUse","Read|Edit|Write|MultiEdit|NotebookEdit","PostToolUse")
 settings["hooks"]=hooks
 os.makedirs(os.path.dirname(f),exist_ok=True)
 with open(f,"w",encoding="utf-8") as fh:

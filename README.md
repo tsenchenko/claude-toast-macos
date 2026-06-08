@@ -114,8 +114,8 @@ This removes the hook scripts, deletes the per-user `terminal-notifier` copy if 
 - **Hooks in `settings.json`** — Claude Code natively runs shell commands on lifecycle events. We attach to four, with portable `"$HOME/.claude/hooks/notify.sh"` commands so a synced `settings.json` works on every machine:
   - `Stop` — turn complete
   - `Notification` — permission prompts and idle prompts
-  - `PreToolUse` (all tools) — surfaces `AskUserQuestion`/`ExitPlanMode` prompts immediately, and arms the waiting-detector for the rest
-  - `PostToolUse` (all tools) — fires when a tool finishes, cancelling its waiting-detector
+  - `PreToolUse` for `Read`/`Edit`/`Write`/`MultiEdit`/`NotebookEdit` (arms the waiting-detector) plus `AskUserQuestion`/`ExitPlanMode` (banner immediately). Matched on those tool names so the hook doesn't run on every single tool call
+  - `PostToolUse` for the same read/edit tools — fires when one finishes, cancelling its waiting-detector
 
   Note: at the user level Claude Code reads `~/.claude/settings.json` — **not** `settings.local.json` (that's a project-level file only). Global hooks placed in `settings.local.json` silently never fire.
 

@@ -29,9 +29,11 @@ log() { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$EVENT" "$*" >>"$L
 # One marker file per in-flight tool call lives here.
 PENDING_DIR="${TMPDIR:-/tmp}/claude-banners-pending"
 # How long an armed tool may run before we assume it's blocked on a permission
-# prompt. Keep it short enough to be useful, long enough that a normal tool call
-# has finished (and its PostToolUse has cleared the marker) first.
-WAIT_SECS=5
+# prompt. Set well ABOVE how long these tools actually take to finish in practice
+# — including under heavy parallel workflows, where PostToolUse (which clears the
+# marker) can lag — so a slow-but-unblocked tool never false-fires. A real
+# permission prompt waits for you, far longer than this, so it still gets caught.
+WAIT_SECS=30
 # Tools whose runtime is always near-instant — a stall means "awaiting approval".
 # Bash/Grep/Glob/Task/WebFetch/WebSearch are deliberately omitted: they can run
 # long for legitimate reasons and would produce false alarms.
@@ -222,9 +224,18 @@ case "$EVENT" in
     exit 0
     ;;
   PostToolUse)
-    # Tool finished (or was approved) -> cancel its pending watcher.
+    # Tool finished (or was approved) -> cancel its pending watcher. If it took
+    # unusually long to clear (but was never a prompt), note it so the WAIT_SECS
+    # margin can be sanity-checked against real-world latency.
     tuid="$(jstr tool_use_id)"
-    [ -n "$tuid" ] && rm -f "$PENDING_DIR/$tuid" 2>/dev/null || true
+    if [ -n "$tuid" ]; then
+      marker="$PENDING_DIR/$tuid"
+      if [ -e "$marker" ]; then
+        age=$(( $(date +%s) - $(stat -f %m "$marker" 2>/dev/null || date +%s) ))
+        [ "$age" -ge 5 ] && log "armed tool cleared after ${age}s (not a prompt; WAIT_SECS=$WAIT_SECS)"
+        rm -f "$marker" 2>/dev/null || true
+      fi
+    fi
     exit 0
     ;;
   Notification)
